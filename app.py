@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import tempfile
+import threading
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -39,6 +40,11 @@ MENU_PATH = BASE_DIR / "menu.json"
 ORDERS_PATH = BASE_DIR / "orders.json"
 OWNERS_PATH = BASE_DIR / "owners.json"
 TABLES_PATH = BASE_DIR / "tables.json"
+
+# Per-file write locks prevent concurrent read-modify-write races within a process.
+_orders_lock = threading.Lock()
+_menu_lock = threading.Lock()
+_tables_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # App creation
@@ -353,6 +359,8 @@ def _otp_is_expired() -> bool:
 # ---------------------------------------------------------------------------
 
 def compute_order_summary(items: list[dict]) -> dict:
+    if not isinstance(items, list):
+        abort(400, description="items must be a list.")
     menu = load_menu()
     menu_items = {
         item["id"]: item
@@ -365,8 +373,15 @@ def compute_order_summary(items: list[dict]) -> dict:
     total = 0.0
     summary = []
     for entry in items:
+        if not isinstance(entry, dict):
+            abort(400, description="Each item entry must be an object.")
         item_id = entry.get("id")
-        quantity = max(int(entry.get("quantity", 1)), 1)
+        if not item_id or not isinstance(item_id, str):
+            abort(400, description="Each item entry must have a valid string 'id'.")
+        try:
+            quantity = max(int(float(entry.get("quantity", 1))), 1)
+        except (TypeError, ValueError):
+            abort(400, description=f"Invalid quantity for item {item_id!r}.")
         menu_item = menu_items.get(item_id)
         if not menu_item:
             abort(400, description=f"Unknown item id: {item_id!r}")
@@ -633,7 +648,8 @@ def owner_dashboard() -> str:
     menu = load_menu()
     pending_orders = [o for o in orders if o.get("status") != "completed"]
     completed_orders = [o for o in orders if o.get("status") == "completed"]
-    total_items = sum(len(cat["items"]) for cat in menu.get("categories", []))
+    total_items = sum(len(cat.get("items", [])) for cat in menu.get("categories", []))
+    total_revenue = round(sum(float(o.get("total") or 0) for o in completed_orders), 2)
     return render_template(
         "owner_dashboard.html",
         owner_username=logged_in_owner(),
@@ -643,6 +659,7 @@ def owner_dashboard() -> str:
         pending_orders=pending_orders,
         completed_orders=completed_orders,
         total_items=total_items,
+        total_revenue=total_revenue,
     )
 
 # ---------------------------------------------------------------------------
@@ -819,7 +836,7 @@ def create_table() -> Response:
         {
             "id": table_id,
             "name": table_name,
-            "createdAt": datetime.utcnow().isoformat() + "Z",
+            "createdAt": datetime.now(timezone.utc).isoformat(),
         }
     )
     save_tables(tables)
@@ -877,29 +894,31 @@ def update_order_status(order_id: int) -> Response:
     if new_status not in VALID_ORDER_STATUSES:
         flash("Invalid order status.")
         return redirect(url_for("owner_dashboard") + "#orders")
-    orders = load_orders()
-    found = False
-    for order in orders:
-        if order["id"] == order_id:
-            order["status"] = new_status
-            found = True
-            break
-    if not found:
-        flash("Order not found.")
-        return redirect(url_for("owner_dashboard") + "#orders")
-    save_orders(orders)
+    with _orders_lock:
+        orders = load_orders()
+        found = False
+        for order in orders:
+            if order["id"] == order_id:
+                order["status"] = new_status
+                found = True
+                break
+        if not found:
+            flash("Order not found.")
+            return redirect(url_for("owner_dashboard") + "#orders")
+        save_orders(orders)
     return redirect(url_for("owner_dashboard") + "#orders")
 
 
 @app.route("/owner/order/<int:order_id>/complete", methods=["POST"])
 @login_required
 def complete_order(order_id: int) -> Response:
-    orders = load_orders()
-    for order in orders:
-        if order["id"] == order_id:
-            order["status"] = "completed"
-            break
-    save_orders(orders)
+    with _orders_lock:
+        orders = load_orders()
+        for order in orders:
+            if order["id"] == order_id:
+                order["status"] = "completed"
+                break
+        save_orders(orders)
     return redirect(url_for("owner_dashboard") + "#orders")
 
 
@@ -959,20 +978,21 @@ def checkout() -> tuple[dict, int]:
         table_name = "Online"
 
     order_summary = compute_order_summary(items)
-    orders = load_orders()
-    order_record = {
-        "id": next_id(orders),
-        "customerName": customer_name,
-        "tableId": table_id,
-        "tableName": table_name,
-        "createdAt": datetime.utcnow().isoformat() + "Z",
-        "items": order_summary["items"],
-        "total": order_summary["total"],
-        "status": "pending",
-        "origin": "table" if table_id else "online",
-    }
-    orders.append(order_record)
-    save_orders(orders)
+    with _orders_lock:
+        orders = load_orders()
+        order_record = {
+            "id": next_id(orders),
+            "customerName": customer_name,
+            "tableId": table_id,
+            "tableName": table_name,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "items": order_summary["items"],
+            "total": order_summary["total"],
+            "status": "pending",
+            "origin": "table" if table_id else "online",
+        }
+        orders.append(order_record)
+        save_orders(orders)
     log_security("ORDER_PLACED", f"table={table_id!r} total={order_record['total']}")
     return {"message": "Order placed successfully.", "order": order_record}, 201
 

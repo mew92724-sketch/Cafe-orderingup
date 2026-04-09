@@ -150,7 +150,7 @@
                   </div>
                   <div class="order-total-row">
                     <span class="order-total-label">Total</span>
-                    <span class="order-total-value">${{ '%.2f' | format(order.total | default(0)) }}</span>
+                    <span class="order-total-value">${{ '%.2f' | format((order.total or 0) | float) }}</span>
                   </div>
                   <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
                     {% if order.status == 'pending' or not order.status %}
@@ -208,7 +208,6 @@
                   <span style="font-size:0.875rem;font-weight:600;">Orders completed</span>
                   <strong>{{ completed_orders | length }}</strong>
                 </div>
-                {% set total_revenue = completed_orders | sum(attribute='total') %}
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--primary-light);border-radius:var(--radius);">
                   <span style="font-size:0.875rem;font-weight:700;color:var(--primary);">Total Revenue</span>
                   <strong style="color:var(--primary);">${{ '%.2f' | format(total_revenue) }}</strong>
@@ -461,13 +460,13 @@
                   {% for item in order.items | default([]) %}
                   <div class="order-line">
                     <span>{{ item.name | default('Item') }} × {{ item.quantity | default(1) }}</span>
-                    <span>${{ '%.2f' | format(item.lineTotal | default(0)) }}</span>
+                    <span>${{ '%.2f' | format((item.lineTotal or 0) | float) }}</span>
                   </div>
                   {% endfor %}
                 </div>
                 <div class="order-total-row">
                   <span class="order-total-label">Total</span>
-                  <span class="order-total-value">${{ '%.2f' | format(order.total | default(0)) }}</span>
+                  <span class="order-total-value">${{ '%.2f' | format((order.total or 0) | float) }}</span>
                 </div>
                 <div style="margin-top:0.875rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
                   {% if order.status == 'pending' or not order.status %}
@@ -521,7 +520,7 @@
                 </div>
                 <div class="order-total-row">
                   <span class="order-total-label">Total</span>
-                  <span class="order-total-value">${{ '%.2f' | format(order.total | default(0)) }}</span>
+                  <span class="order-total-value">${{ '%.2f' | format((order.total or 0) | float) }}</span>
                 </div>
               </div>
               {% endfor %}
