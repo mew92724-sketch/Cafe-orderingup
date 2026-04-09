@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import secrets
+import tempfile
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -169,16 +170,43 @@ def log_security(event: str, detail: str = "") -> None:
 # ---------------------------------------------------------------------------
 
 def read_json(path: Path, default):
-    if path.exists():
+    """Read JSON from *path*, returning *default* on any error."""
+    if not path.exists():
+        return default
+    try:
         with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    return default
+            data = json.load(handle)
+        return data
+    except json.JSONDecodeError as exc:
+        app.logger.error("Corrupt JSON in %s (%s) — returning default", path, exc)
+        # Rename the corrupt file so we don't lose it, then recover gracefully
+        try:
+            corrupt = path.with_suffix(".corrupt")
+            path.rename(corrupt)
+            app.logger.error("Moved corrupt file to %s", corrupt)
+        except OSError:
+            pass
+        return default
+    except OSError as exc:
+        app.logger.error("Failed to read %s: %s", path, exc)
+        return default
 
 
 def write_json(path: Path, data) -> None:
+    """Atomically write *data* as JSON to *path* using a temp-file + rename."""
     try:
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=2)
+        dir_ = path.parent
+        fd, tmp_path = tempfile.mkstemp(dir=dir_, prefix=".~", suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2)
+            os.replace(tmp_path, path)  # atomic on POSIX, best-effort on Windows
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
     except OSError as exc:
         app.logger.error("Failed to write %s: %s", path, exc)
         raise
@@ -360,23 +388,39 @@ def compute_order_summary(items: list[dict]) -> dict:
 # Error handlers — generic messages, no stack traces exposed
 # ---------------------------------------------------------------------------
 
+def _wants_json() -> bool:
+    """Return True when the client expects a JSON response.
+
+    Covers:
+    - Requests with Content-Type: application/json (POST/PUT API calls)
+    - Requests to /api/* routes (GET API polling, where Content-Type is absent)
+    - Requests that list application/json first in their Accept header
+    """
+    if request.is_json:
+        return True
+    if request.path.startswith("/api/"):
+        return True
+    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    return best == "application/json"
+
+
 @app.errorhandler(400)
 def err_bad_request(e):
-    if request.is_json:
-        return jsonify(description=str(e)), 400
+    if _wants_json():
+        return jsonify(description=str(getattr(e, "description", e))), 400
     return render_template("errors/400.html"), 400
 
 
 @app.errorhandler(403)
 def err_forbidden(e):
-    if request.is_json:
+    if _wants_json():
         return jsonify(description="Forbidden."), 403
     return render_template("errors/403.html"), 403
 
 
 @app.errorhandler(404)
 def err_not_found(e):
-    if request.is_json:
+    if _wants_json():
         return jsonify(description="Not found."), 404
     return render_template("errors/404.html"), 404
 
@@ -391,14 +435,14 @@ def err_csrf(e):
 @app.errorhandler(429)
 def err_rate_limit(e):
     log_security("RATE_LIMIT_HIT", f"path={request.path}")
-    if request.is_json:
+    if _wants_json():
         return jsonify(description="Too many requests. Please slow down."), 429
     return render_template("errors/429.html"), 429
 
 
 @app.errorhandler(413)
 def err_payload_too_large(e):
-    if request.is_json:
+    if _wants_json():
         return jsonify(description="Request payload too large."), 413
     return render_template("errors/400.html"), 413
 
@@ -406,7 +450,7 @@ def err_payload_too_large(e):
 @app.errorhandler(500)
 def err_server(e):
     app.logger.exception("Internal server error: %s", e)
-    if request.is_json:
+    if _wants_json():
         return jsonify(description="An internal error occurred."), 500
     return render_template("errors/500.html"), 500
 
@@ -585,7 +629,7 @@ def owner_logout() -> Response:
 @login_required
 def owner_dashboard() -> str:
     tables = load_tables()
-    orders = sorted(load_orders(), key=lambda o: o["createdAt"], reverse=True)
+    orders = sorted(load_orders(), key=lambda o: o.get("createdAt", ""), reverse=True)
     menu = load_menu()
     pending_orders = [o for o in orders if o.get("status") != "completed"]
     completed_orders = [o for o in orders if o.get("status") == "completed"]
