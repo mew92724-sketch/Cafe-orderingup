@@ -37,10 +37,12 @@ from werkzeug.security import check_password_hash, generate_password_hash
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
-MENU_PATH = BASE_DIR / "menu.json"
-ORDERS_PATH = BASE_DIR / "orders.json"
-OWNERS_PATH = BASE_DIR / "owners.json"
-TABLES_PATH = BASE_DIR / "tables.json"
+DATA_DIR = Path(os.environ.get("DATA_DIR", "")) if os.environ.get("DATA_DIR") else BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+MENU_PATH = DATA_DIR / "menu.json"
+ORDERS_PATH = DATA_DIR / "orders.json"
+OWNERS_PATH = DATA_DIR / "owners.json"
+TABLES_PATH = DATA_DIR / "tables.json"
 
 # Per-file write locks prevent concurrent read-modify-write races within a process.
 _orders_lock = threading.Lock()
