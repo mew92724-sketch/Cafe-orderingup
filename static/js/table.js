@@ -58,7 +58,7 @@ function renderMenu() {
                 ${item.tags && item.tags.length ? `<div class="item-tags">${item.tags.map((t) => `<span class="item-tag">${t}</span>`).join("")}</div>` : ""}
               </div>
               <div class="menu-item-right">
-                <span class="item-price">$${fmt(item.price)}</span>
+                <span class="item-price">₹${fmt(item.price)}</span>
                 <button class="add-btn" data-id="${item.id}">+ Add</button>
               </div>
             </div>
@@ -97,7 +97,7 @@ function renderCart() {
         <span class="qty-value">${entry.quantity}</span>
         <button class="qty-btn" data-action="increase" data-id="${entry.id}">+</button>
       </div>
-      <span class="cart-item-total">$${fmt(entry.lineTotal)}</span>
+      <span class="cart-item-total">₹${fmt(entry.lineTotal)}</span>
       <button class="remove-btn" data-action="remove" data-id="${entry.id}" title="Remove">✕</button>
     </div>
   `).join("");
@@ -193,7 +193,7 @@ function buildStatusHTML(order) {
   }).join('<div class="status-step-line"></div>');
 
   const itemsList = order.items.map((i) =>
-    `<div class="order-line"><span>${i.name} × ${i.quantity}</span><span>$${i.lineTotal.toFixed(2)}</span></div>`
+    `<div class="order-line"><span>${i.name} × ${i.quantity}</span><span>₹${i.lineTotal.toFixed(2)}</span></div>`
   ).join("");
 
   const isFinished = order.status === "completed";
@@ -219,7 +219,7 @@ function buildStatusHTML(order) {
         ${itemsList}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);font-weight:700;">
           <span>Total</span>
-          <span>$${order.total.toFixed(2)}</span>
+          <span>₹${order.total.toFixed(2)}</span>
         </div>
       </div>
 
