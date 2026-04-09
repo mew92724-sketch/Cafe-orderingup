@@ -150,7 +150,7 @@
                   </div>
                   <div class="order-total-row">
                     <span class="order-total-label">Total</span>
-                    <span class="order-total-value">${{ '%.2f' | format((order.total or 0) | float) }}</span>
+                    <span class="order-total-value">₹{{ '%.2f' | format((order.total or 0) | float) }}</span>
                   </div>
                   <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
                     {% if order.status == 'pending' or not order.status %}
@@ -210,7 +210,7 @@
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--primary-light);border-radius:var(--radius);">
                   <span style="font-size:0.875rem;font-weight:700;color:var(--primary);">Total Revenue</span>
-                  <strong style="color:var(--primary);">${{ '%.2f' | format(total_revenue) }}</strong>
+                  <strong style="color:var(--primary);">₹{{ '%.2f' | format(total_revenue) }}</strong>
                 </div>
               </div>
             </div>
@@ -318,7 +318,7 @@
                             <div class="item-name">{{ item.name }}</div>
                             {% if item.description %}<div style="font-size:0.8rem;color:var(--text-muted);">{{ item.description }}</div>{% endif %}
                           </div>
-                          <div class="item-price">${{ '%.2f' | format(item.price) }}</div>
+                          <div class="item-price">₹{{ '%.2f' | format(item.price) }}</div>
                         </div>
                         <div class="item-row-actions">
                           <button class="btn btn-secondary btn-sm" type="button" data-edit-target="edit-{{ item.id }}">Edit</button>
@@ -377,7 +377,7 @@
                     <input name="itemName" placeholder="e.g. Latte" required />
                   </div>
                   <div class="field">
-                    <label>Price ($)</label>
+                    <label>Price (₹)</label>
                     <input name="itemPrice" type="number" step="0.01" placeholder="0.00" min="0" max="9999.99" required />
                   </div>
                   <div class="field">
@@ -460,13 +460,13 @@
                   {% for item in (order['items'] or []) %}
                   <div class="order-line">
                     <span>{{ item.name | default('Item') }} × {{ item.quantity | default(1) }}</span>
-                    <span>${{ '%.2f' | format((item.lineTotal or 0) | float) }}</span>
+                    <span>₹{{ '%.2f' | format((item.lineTotal or 0) | float) }}</span>
                   </div>
                   {% endfor %}
                 </div>
                 <div class="order-total-row">
                   <span class="order-total-label">Total</span>
-                  <span class="order-total-value">${{ '%.2f' | format((order.total or 0) | float) }}</span>
+                  <span class="order-total-value">₹{{ '%.2f' | format((order.total or 0) | float) }}</span>
                 </div>
                 <div style="margin-top:0.875rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
                   {% if order.status == 'pending' or not order.status %}
@@ -520,7 +520,7 @@
                 </div>
                 <div class="order-total-row">
                   <span class="order-total-label">Total</span>
-                  <span class="order-total-value">${{ '%.2f' | format((order.total or 0) | float) }}</span>
+                  <span class="order-total-value">₹{{ '%.2f' | format((order.total or 0) | float) }}</span>
                 </div>
               </div>
               {% endfor %}
