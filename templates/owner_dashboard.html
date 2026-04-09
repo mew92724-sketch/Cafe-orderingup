@@ -51,6 +51,9 @@
       <a href="{{ url_for('owner_logout') }}" class="sidebar-link" style="margin-top:0.5rem;">
         <span class="link-icon">🚪</span> Sign Out
       </a>
+      <a href="{{ url_for('home') }}" class="sidebar-link">
+        <span class="link-icon">🏠</span> Home
+      </a>
     </div>
   </nav>
 
@@ -62,13 +65,17 @@
         <p id="topbar-subtitle">Welcome back, {{ owner_username }}</p>
       </div>
       <div class="topbar-actions">
-        <a href="{{ url_for('home') }}" class="btn btn-secondary btn-sm">← Home</a>
+        {% if pending_orders %}
+        <div class="topbar-alert">
+          <span class="pulse-dot"></span>
+          {{ pending_orders | length }} pending order{{ 's' if pending_orders | length != 1 }}
+        </div>
+        {% endif %}
       </div>
     </div>
 
     <div class="dashboard-content">
 
-      <!-- Flash messages -->
       {% with messages = get_flashed_messages() %}
       {% if messages %}
       <div class="flash-container">
@@ -79,8 +86,8 @@
       {% endif %}
       {% endwith %}
 
-      <!-- Stats -->
-      <div class="stats-grid">
+      <!-- Stats Row -->
+      <div class="stats-grid-5">
         <div class="stat-card">
           <div class="stat-icon purple">🪑</div>
           <div class="stat-info">
@@ -88,18 +95,38 @@
             <div class="stat-label">Active Tables</div>
           </div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card {% if pending_orders %}stat-card--alert{% endif %}">
           <div class="stat-icon amber">🛒</div>
           <div class="stat-info">
             <div class="stat-value">{{ pending_orders | length }}</div>
             <div class="stat-label">Pending Orders</div>
           </div>
+          {% if pending_orders %}
+          <span class="pulse-dot pulse-dot--card"></span>
+          {% endif %}
         </div>
         <div class="stat-card">
           <div class="stat-icon green">📋</div>
           <div class="stat-info">
             <div class="stat-value">{{ total_items }}</div>
             <div class="stat-label">Menu Items</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">✅</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ completed_orders | length }}</div>
+            <div class="stat-label">Completed</div>
+          </div>
+        </div>
+        <div class="stat-card stat-card--revenue">
+          <div class="stat-icon emerald">₹</div>
+          <div class="stat-info">
+            <div class="stat-value stat-value--revenue">{{ '%.0f' | format(total_revenue) }}</div>
+            <div class="stat-label">Total Revenue</div>
+            {% if completed_orders | length > 0 %}
+            <div class="stat-avg">avg ₹{{ '%.0f' | format(total_revenue / (completed_orders | length)) }} / order</div>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -115,110 +142,175 @@
         </button>
       </div>
 
-      <!-- OVERVIEW TAB -->
+      <!-- ===================== OVERVIEW TAB ===================== -->
       <div id="tab-overview" class="tab-panel active">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+        <div class="overview-grid">
+
+          <!-- Live Orders -->
           <div class="card">
             <div class="card-header">
               <div>
-                <h3>Recent Pending Orders</h3>
-                <div class="card-subtitle">Last 5 orders awaiting completion</div>
+                <h3>Live Orders</h3>
+                <div class="card-subtitle">Requires your attention right now</div>
               </div>
-            </div>
-            <div class="card-body">
               {% if pending_orders %}
-                {% for order in pending_orders[:5] %}
-                <div class="order-card" style="margin-bottom:0.75rem;">
-                  <div class="order-card-head">
-                    <div>
-                      <div class="order-id">#{{ order.id }}</div>
-                      <div class="order-customer">{{ order.customerName | default('Guest') }}</div>
-                      <div class="order-time">{{ (order.createdAt or '')[:16] | replace('T',' ') }}</div>
-                    </div>
-                    <div style="text-align:right;">
+              <span class="live-badge">● Live</span>
+              {% endif %}
+            </div>
+            <div class="card-body" style="padding:0;">
+              {% if pending_orders %}
+                {% for order in pending_orders[:6] %}
+                <div class="order-row">
+                  <div class="order-row-left">
+                    <div class="order-row-id">#{{ order.id }}</div>
+                    <div class="order-row-name">{{ order.customerName | default('Guest') }}</div>
+                    <div class="order-row-meta">
                       <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
-                      <div style="margin-top:0.375rem;">
-                        {% if order.status == 'preparing' %}
-                          <span class="order-status-badge status-preparing">👨‍🍳 Preparing</span>
-                        {% elif order.status == 'ready' %}
-                          <span class="order-status-badge status-ready">🔔 Ready</span>
-                        {% else %}
-                          <span class="order-status-badge status-pending">⏳ Pending</span>
-                        {% endif %}
-                      </div>
+                      <span class="order-row-time">{{ (order.createdAt or '')[:16] | replace('T',' ') }}</span>
                     </div>
                   </div>
-                  <div class="order-total-row">
-                    <span class="order-total-label">Total</span>
-                    <span class="order-total-value">₹{{ '%.2f' | format((order.total or 0) | float) }}</span>
-                  </div>
-                  <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
-                    {% if order.status == 'pending' or not order.status %}
-                    <form action="{{ url_for('update_order_status', order_id=order.id) }}" method="post" style="flex:1;">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                      <input type="hidden" name="status" value="preparing" />
-                      <button class="btn btn-secondary btn-sm btn-full" type="submit">👨‍🍳 Mark Preparing</button>
-                    </form>
-                    {% elif order.status == 'preparing' %}
-                    <form action="{{ url_for('update_order_status', order_id=order.id) }}" method="post" style="flex:1;">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                      <input type="hidden" name="status" value="ready" />
-                      <button class="btn btn-secondary btn-sm btn-full" type="submit">🔔 Mark Ready</button>
-                    </form>
-                    {% endif %}
-                    <form action="{{ url_for('complete_order', order_id=order.id) }}" method="post" style="flex:1;">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                      <button class="btn btn-primary btn-sm btn-full" type="submit">✓ Complete</button>
-                    </form>
+                  <div class="order-row-right">
+                    <div style="margin-bottom:0.5rem;">
+                      {% if order.status == 'preparing' %}
+                        <span class="order-status-badge status-preparing">👨‍🍳 Preparing</span>
+                      {% elif order.status == 'ready' %}
+                        <span class="order-status-badge status-ready">🔔 Ready</span>
+                      {% else %}
+                        <span class="order-status-badge status-pending">⏳ Pending</span>
+                      {% endif %}
+                    </div>
+                    <div class="order-row-total">₹{{ '%.2f' | format((order.total or 0) | float) }}</div>
+                    <div class="order-row-actions">
+                      {% if order.status == 'pending' or not order.status %}
+                      <form action="{{ url_for('update_order_status', order_id=order.id) }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <input type="hidden" name="status" value="preparing" />
+                        <button class="btn btn-secondary btn-sm" type="submit">👨‍🍳 Prepare</button>
+                      </form>
+                      {% elif order.status == 'preparing' %}
+                      <form action="{{ url_for('update_order_status', order_id=order.id) }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <input type="hidden" name="status" value="ready" />
+                        <button class="btn btn-secondary btn-sm" type="submit">🔔 Ready</button>
+                      </form>
+                      {% endif %}
+                      <form action="{{ url_for('complete_order', order_id=order.id) }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <button class="btn btn-primary btn-sm" type="submit">✓ Done</button>
+                      </form>
+                    </div>
                   </div>
                 </div>
                 {% endfor %}
+                {% if pending_orders | length > 6 %}
+                <div style="padding:1rem 1.5rem;text-align:center;">
+                  <button class="btn btn-ghost btn-sm" data-tab="orders">View all {{ pending_orders | length }} orders →</button>
+                </div>
+                {% endif %}
               {% else %}
                 <div class="empty-state">
                   <div class="empty-icon">🎉</div>
                   <h4>All clear!</h4>
-                  <p>No pending orders right now.</p>
+                  <p>No pending orders. Enjoy the break.</p>
                 </div>
               {% endif %}
             </div>
           </div>
 
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <h3>Quick Summary</h3>
-                <div class="card-subtitle">Your cafe at a glance</div>
+          <!-- Analytics Panel -->
+          <div style="display:flex;flex-direction:column;gap:1.25rem;">
+
+            <!-- KPI Summary -->
+            <div class="card">
+              <div class="card-header">
+                <div><h3>Analytics Summary</h3><div class="card-subtitle">Performance at a glance</div></div>
+              </div>
+              <div class="card-body" style="padding:0;">
+                <div class="kpi-list">
+                  <div class="kpi-row">
+                    <div class="kpi-label">
+                      <span class="kpi-dot" style="background:#4f46e5;"></span>
+                      Total Revenue
+                    </div>
+                    <div class="kpi-value kpi-value--primary">₹{{ '%.2f' | format(total_revenue) }}</div>
+                  </div>
+                  <div class="kpi-row">
+                    <div class="kpi-label">
+                      <span class="kpi-dot" style="background:#10b981;"></span>
+                      Orders Completed
+                    </div>
+                    <div class="kpi-value">{{ completed_orders | length }}</div>
+                  </div>
+                  <div class="kpi-row">
+                    <div class="kpi-label">
+                      <span class="kpi-dot" style="background:#f59e0b;"></span>
+                      Avg. Order Value
+                    </div>
+                    <div class="kpi-value">
+                      {% if completed_orders | length > 0 %}₹{{ '%.2f' | format(total_revenue / (completed_orders | length)) }}{% else %}—{% endif %}
+                    </div>
+                  </div>
+                  <div class="kpi-row">
+                    <div class="kpi-label">
+                      <span class="kpi-dot" style="background:#6366f1;"></span>
+                      Menu Categories
+                    </div>
+                    <div class="kpi-value">{{ menu.categories | length }}</div>
+                  </div>
+                  <div class="kpi-row">
+                    <div class="kpi-label">
+                      <span class="kpi-dot" style="background:#ec4899;"></span>
+                      Total Menu Items
+                    </div>
+                    <div class="kpi-value">{{ total_items }}</div>
+                  </div>
+                  <div class="kpi-row">
+                    <div class="kpi-label">
+                      <span class="kpi-dot" style="background:#64748b;"></span>
+                      Tables with QR
+                    </div>
+                    <div class="kpi-value">{{ tables | length }}</div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="card-body">
-              <div style="display:flex;flex-direction:column;gap:0.875rem;">
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
-                  <span style="font-size:0.875rem;font-weight:600;">Tables with QR codes</span>
-                  <strong>{{ tables | length }}</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
-                  <span style="font-size:0.875rem;font-weight:600;">Menu categories</span>
-                  <strong>{{ menu.categories | length }}</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
-                  <span style="font-size:0.875rem;font-weight:600;">Total menu items</span>
-                  <strong>{{ total_items }}</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
-                  <span style="font-size:0.875rem;font-weight:600;">Orders completed</span>
-                  <strong>{{ completed_orders | length }}</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--primary-light);border-radius:var(--radius);">
-                  <span style="font-size:0.875rem;font-weight:700;color:var(--primary);">Total Revenue</span>
-                  <strong style="color:var(--primary);">₹{{ '%.2f' | format(total_revenue) }}</strong>
-                </div>
+
+            <!-- Completed Orders mini log -->
+            <div class="card">
+              <div class="card-header">
+                <div><h3>Recent Completions</h3><div class="card-subtitle">Last completed orders</div></div>
+              </div>
+              <div class="card-body" style="padding:0;">
+                {% if completed_orders %}
+                  {% for order in completed_orders[-5:] | reverse %}
+                  <div class="order-row order-row--completed">
+                    <div class="order-row-left">
+                      <div class="order-row-id">#{{ order.id }}</div>
+                      <div class="order-row-name">{{ order.customerName | default('Guest') }}</div>
+                      <div class="order-row-meta">
+                        <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
+                      </div>
+                    </div>
+                    <div class="order-row-right">
+                      <span class="order-status-badge status-completed">✓ Done</span>
+                      <div class="order-row-total" style="margin-top:0.25rem;">₹{{ '%.2f' | format((order.total or 0) | float) }}</div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="empty-state" style="padding:2rem;">
+                    <div class="empty-icon">📭</div>
+                    <p>No completed orders yet</p>
+                  </div>
+                {% endif %}
               </div>
             </div>
+
           </div>
         </div>
       </div>
 
-      <!-- TABLES TAB -->
+      <!-- ===================== TABLES TAB ===================== -->
       <div id="tab-tables" class="tab-panel">
         <div class="tables-layout">
           <div class="table-form-card">
@@ -269,7 +361,7 @@
         </div>
       </div>
 
-      <!-- MENU TAB -->
+      <!-- ===================== MENU TAB ===================== -->
       <div id="tab-menu" class="tab-panel">
         <div class="menu-layout">
 
@@ -317,6 +409,7 @@
                           <div>
                             <div class="item-name">{{ item.name }}</div>
                             {% if item.description %}<div style="font-size:0.8rem;color:var(--text-muted);">{{ item.description }}</div>{% endif %}
+                            {% if item.tags %}<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">{{ item.tags | join(', ') }}</div>{% endif %}
                           </div>
                           <div class="item-price">₹{{ '%.2f' | format(item.price) }}</div>
                         </div>
@@ -427,31 +520,85 @@
         </div>
       </div>
 
-      <!-- ORDERS TAB -->
+      <!-- ===================== ORDERS TAB ===================== -->
       <div id="tab-orders" class="tab-panel">
-        <div class="orders-layout">
-          <div>
-            <div class="card-header" style="padding:0 0 1rem;">
-              <h3 class="section-title" style="margin:0;">Pending <span style="color:var(--danger);font-size:0.875rem;">({{ pending_orders | length }})</span></h3>
+
+        {% set orders_new = pending_orders | selectattr('status', 'equalto', 'pending') | list %}
+        {% set orders_preparing = pending_orders | selectattr('status', 'equalto', 'preparing') | list %}
+        {% set orders_ready = pending_orders | selectattr('status', 'equalto', 'ready') | list %}
+        {% set orders_inprogress = orders_preparing + orders_ready %}
+
+        <div class="kanban-board">
+
+          <!-- Column: Pending -->
+          <div class="kanban-col">
+            <div class="kanban-col-header kanban-col-header--pending">
+              <span class="kanban-col-title">⏳ Pending</span>
+              <span class="kanban-col-count">{{ orders_new | length }}</span>
             </div>
-            {% if pending_orders %}
-              {% for order in pending_orders %}
+            {% if orders_new %}
+              {% for order in orders_new %}
               <div class="order-card">
                 <div class="order-card-head">
                   <div>
                     <div class="order-id">Order #{{ order.id }}</div>
                     <div class="order-customer">{{ order.customerName | default('Guest') }}</div>
-                    <div class="order-time">{{ (order.createdAt or '')[:16] | replace('T',' ') }} UTC</div>
+                    <div class="order-time">{{ (order.createdAt or '')[:16] | replace('T',' ') }}</div>
+                  </div>
+                  <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
+                </div>
+                <div class="order-items-list">
+                  {% for item in (order['items'] or []) %}
+                  <div class="order-line">
+                    <span>{{ item.name | default('Item') }} × {{ item.quantity | default(1) }}</span>
+                    <span>₹{{ '%.2f' | format((item.lineTotal or 0) | float) }}</span>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="order-total-row">
+                  <span class="order-total-label">Total</span>
+                  <span class="order-total-value">₹{{ '%.2f' | format((order.total or 0) | float) }}</span>
+                </div>
+                <div class="order-card-actions">
+                  <form action="{{ url_for('update_order_status', order_id=order.id) }}" method="post" style="flex:1;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <input type="hidden" name="status" value="preparing" />
+                    <button class="btn btn-secondary btn-sm btn-full" type="submit">👨‍🍳 Start Preparing</button>
+                  </form>
+                  <form action="{{ url_for('complete_order', order_id=order.id) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button class="btn btn-primary btn-sm" type="submit">✓</button>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="kanban-empty">No new orders</div>
+            {% endif %}
+          </div>
+
+          <!-- Column: In Progress -->
+          <div class="kanban-col">
+            <div class="kanban-col-header kanban-col-header--preparing">
+              <span class="kanban-col-title">👨‍🍳 In Progress</span>
+              <span class="kanban-col-count">{{ orders_inprogress | length }}</span>
+            </div>
+            {% if orders_inprogress %}
+              {% for order in orders_inprogress %}
+              <div class="order-card">
+                <div class="order-card-head">
+                  <div>
+                    <div class="order-id">Order #{{ order.id }}</div>
+                    <div class="order-customer">{{ order.customerName | default('Guest') }}</div>
+                    <div class="order-time">{{ (order.createdAt or '')[:16] | replace('T',' ') }}</div>
                   </div>
                   <div style="text-align:right;">
                     <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
                     <div style="margin-top:0.375rem;">
-                      {% if order.status == 'preparing' %}
-                        <span class="order-status-badge status-preparing">👨‍🍳 Preparing</span>
-                      {% elif order.status == 'ready' %}
+                      {% if order.status == 'ready' %}
                         <span class="order-status-badge status-ready">🔔 Ready</span>
                       {% else %}
-                        <span class="order-status-badge status-pending">⏳ Pending</span>
+                        <span class="order-status-badge status-preparing">👨‍🍳 Preparing</span>
                       {% endif %}
                     </div>
                   </div>
@@ -468,50 +615,42 @@
                   <span class="order-total-label">Total</span>
                   <span class="order-total-value">₹{{ '%.2f' | format((order.total or 0) | float) }}</span>
                 </div>
-                <div style="margin-top:0.875rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
-                  {% if order.status == 'pending' or not order.status %}
-                  <form action="{{ url_for('update_order_status', order_id=order.id) }}" method="post" style="flex:1;">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                    <input type="hidden" name="status" value="preparing" />
-                    <button class="btn btn-secondary btn-full" type="submit">👨‍🍳 Mark as Preparing</button>
-                  </form>
-                  {% elif order.status == 'preparing' %}
+                <div class="order-card-actions">
+                  {% if order.status == 'preparing' %}
                   <form action="{{ url_for('update_order_status', order_id=order.id) }}" method="post" style="flex:1;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                     <input type="hidden" name="status" value="ready" />
-                    <button class="btn btn-secondary btn-full" type="submit">🔔 Mark as Ready</button>
+                    <button class="btn btn-secondary btn-sm btn-full" type="submit">🔔 Mark Ready</button>
                   </form>
-                  {% elif order.status == 'ready' %}
-                  <div style="flex:1;padding:0.5rem 1rem;background:var(--success-light);color:var(--success);border-radius:var(--radius);font-weight:600;text-align:center;">🔔 Ready for pickup</div>
+                  {% else %}
+                  <div style="flex:1;padding:0.5rem 1rem;background:var(--success-light);color:var(--success);border-radius:var(--radius-sm);font-weight:600;text-align:center;font-size:0.8125rem;">🔔 Ready for pickup</div>
                   {% endif %}
-                  <form action="{{ url_for('complete_order', order_id=order.id) }}" method="post" style="flex:1;">
+                  <form action="{{ url_for('complete_order', order_id=order.id) }}" method="post">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                    <button class="btn btn-primary btn-full" type="submit">✓ Mark as Completed</button>
+                    <button class="btn btn-primary btn-sm" type="submit">✓</button>
                   </form>
                 </div>
               </div>
               {% endfor %}
             {% else %}
-              <div class="card"><div class="empty-state">
-                <div class="empty-icon">🎉</div>
-                <h4>No pending orders</h4>
-                <p>All done!</p>
-              </div></div>
+              <div class="kanban-empty">Nothing in progress</div>
             {% endif %}
           </div>
 
-          <div>
-            <div class="card-header" style="padding:0 0 1rem;">
-              <h3 class="section-title" style="margin:0;">Completed <span style="color:var(--success);font-size:0.875rem;">({{ completed_orders | length }})</span></h3>
+          <!-- Column: Completed -->
+          <div class="kanban-col">
+            <div class="kanban-col-header kanban-col-header--completed">
+              <span class="kanban-col-title">✅ Completed</span>
+              <span class="kanban-col-count">{{ completed_orders | length }}</span>
             </div>
             {% if completed_orders %}
-              {% for order in completed_orders %}
-              <div class="order-card completed-order">
+              {% for order in completed_orders | reverse %}
+              <div class="order-card order-card--done">
                 <div class="order-card-head">
                   <div>
                     <div class="order-id">Order #{{ order.id }}</div>
                     <div class="order-customer">{{ order.customerName | default('Guest') }}</div>
-                    <div class="order-time">{{ (order.createdAt or '')[:16] | replace('T',' ') }} UTC</div>
+                    <div class="order-time">{{ (order.createdAt or '')[:16] | replace('T',' ') }}</div>
                   </div>
                   <div style="text-align:right;">
                     <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
@@ -525,12 +664,10 @@
               </div>
               {% endfor %}
             {% else %}
-              <div class="card"><div class="empty-state">
-                <div class="empty-icon">📭</div>
-                <h4>No completed orders yet</h4>
-              </div></div>
+              <div class="kanban-empty">No completed orders yet</div>
             {% endif %}
           </div>
+
         </div>
       </div>
 

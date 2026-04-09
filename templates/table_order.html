@@ -6,72 +6,108 @@
   <title>{{ table.name }} — Order</title>
   <link rel="stylesheet" href="/static/css/styles.css" />
 </head>
-<body>
+<body class="order-body">
 
-<header class="order-page-header">
-  <div class="cafe-name">Cafe Portal</div>
-  <h1>{{ table.name }}</h1>
-  <p>Browse the menu and place your order below</p>
+<!-- Top Header -->
+<header class="order-header">
+  <div class="order-header-inner">
+    <div class="order-header-brand">
+      <span class="order-header-cafe">☕ Cafe Portal</span>
+      <h1 class="order-header-table">{{ table.name }}</h1>
+    </div>
+    <div class="order-header-right">
+      <button class="cart-toggle-btn" id="cart-toggle-btn" aria-label="View cart">
+        <span class="cart-toggle-icon">🛒</span>
+        <span class="cart-toggle-badge" id="cart-badge">0</span>
+      </button>
+    </div>
+  </div>
 </header>
 
-<main class="order-page-main">
+<!-- Search + Category Nav -->
+<div class="order-nav-wrap" id="order-nav-wrap">
+  <div class="order-nav-inner">
+    <div class="order-search-wrap">
+      <span class="search-icon">🔍</span>
+      <input id="menu-search" class="order-search-input" type="search" placeholder="Search menu…" autocomplete="off" />
+    </div>
+    <nav class="cat-nav" id="cat-nav" aria-label="Menu categories">
+      <!-- Populated by JS -->
+    </nav>
+  </div>
+</div>
+
+<!-- Main layout -->
+<div class="order-layout" id="order-layout">
 
   <!-- Menu Panel -->
-  <section class="menu-section">
-    <div class="menu-section-header">
-      <h2>Menu</h2>
-      <input id="menu-search" class="search-input" type="search" placeholder="Search items..." />
-    </div>
-    <div class="menu-body">
-      <div id="menu-container">
-        <p style="color:var(--text-muted);text-align:center;padding:2rem;">Loading menu…</p>
+  <main class="menu-panel" id="menu-panel">
+    <div id="menu-container">
+      <div class="menu-loading">
+        <div class="loading-spinner"></div>
+        <p>Loading menu…</p>
       </div>
     </div>
-  </section>
+  </main>
 
   <!-- Cart Panel -->
-  <aside class="cart-section">
-    <div class="cart-header">
-      <h2>Your Order</h2>
-      <span class="cart-count-badge" id="cart-badge">0</span>
-    </div>
-    <div class="cart-body">
-      <div class="cart-items" id="cart-items">
-        <p style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:1rem 0;">Your cart is empty</p>
+  <aside class="cart-panel" id="cart-panel">
+    <div class="cart-panel-inner">
+      <div class="cart-panel-header">
+        <h2>Your Order</h2>
+        <button class="cart-close-btn" id="cart-close-btn" aria-label="Close cart">✕</button>
       </div>
 
-      <div class="cart-divider"></div>
-
-      <div class="cart-totals">
-        <div class="cart-row">
-          <span>Items</span>
-          <span id="item-count">0</span>
-        </div>
-        <div class="cart-row total">
-          <span>Total</span>
-          <span>₹<span id="order-total">0.00</span></span>
+      <div class="cart-items-wrap" id="cart-items-wrap">
+        <div class="cart-items" id="cart-items">
+          <div class="cart-empty-state">
+            <div class="cart-empty-icon">🛒</div>
+            <p>Your cart is empty</p>
+            <span>Browse the menu and add items</span>
+          </div>
         </div>
       </div>
 
-      <button id="clear-cart" class="btn btn-ghost btn-full btn-sm" type="button" style="margin-bottom:1rem;border:1.5px solid var(--border);">Clear Cart</button>
+      <div class="cart-footer" id="cart-footer">
+        <div class="cart-totals">
+          <div class="cart-row">
+            <span>Items</span>
+            <span id="item-count">0</span>
+          </div>
+          <div class="cart-row total">
+            <span>Total</span>
+            <span>₹<span id="order-total">0.00</span></span>
+          </div>
+        </div>
 
-      <form id="checkout-form">
-        <input type="hidden" id="table-id" value="{{ table.id }}" />
-        <input
-          id="customer-name"
-          class="checkout-input"
-          name="customerName"
-          placeholder="Your name (optional)"
-          autocomplete="name"
-        />
-        <button type="submit" class="btn btn-primary btn-full">Place Order</button>
-      </form>
+        <button id="clear-cart" class="btn btn-ghost btn-full btn-sm" type="button" style="margin-bottom:0.875rem;border:1.5px solid var(--border);">Clear Cart</button>
 
-      <div id="checkout-response" class="checkout-response"></div>
+        <form id="checkout-form">
+          <input type="hidden" id="table-id" value="{{ table.id }}" />
+          <input
+            id="customer-name"
+            class="checkout-input"
+            name="customerName"
+            placeholder="Your name (optional)"
+            autocomplete="name"
+          />
+          <button type="submit" class="btn btn-primary btn-full" id="checkout-btn">Place Order →</button>
+        </form>
+
+        <div id="checkout-response" class="checkout-response"></div>
+      </div>
     </div>
   </aside>
 
-</main>
+</div>
+
+<!-- Mobile FAB -->
+<button class="cart-fab" id="cart-fab" aria-label="View cart">
+  <span class="cart-fab-icon">🛒</span>
+  <span class="cart-fab-text">View Cart</span>
+  <span class="cart-fab-badge" id="cart-fab-badge">0</span>
+  <span class="cart-fab-total">₹<span id="cart-fab-total">0.00</span></span>
+</button>
 
 <script src="/static/js/table.js" defer></script>
 </body>
