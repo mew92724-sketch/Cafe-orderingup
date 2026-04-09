@@ -37,6 +37,7 @@ Click **Environment** and add:
 |---|---|
 | `SECRET_KEY` | Generate a random string (e.g., `your-secret-key-here`) **(Required - app will not start without it)** |
 | `FLASK_ENV` | `production` |
+| `DATA_DIR` | Optional persistent path for data files (e.g. `/data` on rendered containers) |
 
 To generate a secure key, you can use:
 ```bash
@@ -98,7 +99,7 @@ Now `https://k89293676-creator.github.io/Cafe-ordering/` redirects to your live 
 
 ## Important Notes
 
-- **Data Storage**: Orders are saved to `orders.json` on the Render instance. Render uses ephemeral storage, so data resets on redeploy.
+- **Data Storage**: Orders, menu, tables and owners are saved to JSON files under `DATA_DIR` if set, otherwise under `./data`. On Render or Railway, mount a persistent disk and point `DATA_DIR` at that volume to preserve state across restarts.
 - **Persistent Database**: For production, add PostgreSQL to Render and update the code to use SQLAlchemy instead of JSON files.
 - **Secret Key**: Never commit your `SECRET_KEY`. Always set it via Render's environment variables.
 
