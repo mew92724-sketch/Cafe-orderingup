@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Cafe Portal</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+<div class="dashboard-wrapper">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-inner">
+        <div class="brand-icon">☕</div>
+        <div class="brand-text">
+          <h2>Cafe Portal</h2>
+          <span>Owner Dashboard</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="sidebar-section-label">Management</div>
+      <button class="sidebar-link active" data-tab="overview">
+        <span class="link-icon">📊</span> Overview
+      </button>
+      <button class="sidebar-link" data-tab="tables">
+        <span class="link-icon">🪑</span> Tables
+      </button>
+      <button class="sidebar-link" data-tab="menu">
+        <span class="link-icon">📋</span> Menu
+      </button>
+      <button class="sidebar-link" data-tab="orders">
+        <span class="link-icon">🛒</span> Orders
+        {% if pending_orders %}
+        <span class="link-badge">{{ pending_orders | length }}</span>
+        {% endif %}
+      </button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="user-avatar">{{ owner_username[0].upper() }}</div>
+        <div class="user-info">
+          <div class="user-name">{{ owner_username }}</div>
+          <div class="user-role">Owner</div>
+        </div>
+      </div>
+      <a href="{{ url_for('owner_logout') }}" class="sidebar-link" style="margin-top:0.5rem;">
+        <span class="link-icon">🚪</span> Sign Out
+      </a>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <div class="dashboard-main">
+    <div class="dashboard-topbar">
+      <div class="topbar-title">
+        <h1 id="topbar-title">Overview</h1>
+        <p id="topbar-subtitle">Welcome back, {{ owner_username }}</p>
+      </div>
+      <div class="topbar-actions">
+        <a href="{{ url_for('home') }}" class="btn btn-secondary btn-sm">← Home</a>
+      </div>
+    </div>
+
+    <div class="dashboard-content">
+
+      <!-- Flash messages -->
+      {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <div class="flash-container">
+        {% for message in messages %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon purple">🪑</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ tables | length }}</div>
+            <div class="stat-label">Active Tables</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon amber">🛒</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ pending_orders | length }}</div>
+            <div class="stat-label">Pending Orders</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">📋</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ total_items }}</div>
+            <div class="stat-label">Menu Items</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+        <button class="tab-btn" data-tab="tables">🪑 Tables</button>
+        <button class="tab-btn" data-tab="menu">📋 Menu</button>
+        <button class="tab-btn" data-tab="orders">
+          🛒 Orders
+          {% if pending_orders %}<span class="tab-count">{{ pending_orders | length }}</span>{% endif %}
+        </button>
+      </div>
+
+      <!-- OVERVIEW TAB -->
+      <div id="tab-overview" class="tab-panel active">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>Recent Pending Orders</h3>
+                <div class="card-subtitle">Last 5 orders awaiting completion</div>
+              </div>
+            </div>
+            <div class="card-body">
+              {% if pending_orders %}
+                {% for order in pending_orders[:5] %}
+                <div class="order-card" style="margin-bottom:0.75rem;">
+                  <div class="order-card-head">
+                    <div>
+                      <div class="order-id">#{{ order.id }}</div>
+                      <div class="order-customer">{{ order.customerName }}</div>
+                      <div class="order-time">{{ order.createdAt[:16].replace('T',' ') }}</div>
+                    </div>
+                    <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
+                  </div>
+                  <div class="order-total-row">
+                    <span class="order-total-label">Total</span>
+                    <span class="order-total-value">${{ '%.2f' | format(order.total) }}</span>
+                  </div>
+                  <div style="margin-top:0.75rem;">
+                    <form action="{{ url_for('complete_order', order_id=order.id) }}" method="post">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                      <button class="btn btn-primary btn-sm btn-full" type="submit">✓ Mark Completed</button>
+                    </form>
+                  </div>
+                </div>
+                {% endfor %}
+              {% else %}
+                <div class="empty-state">
+                  <div class="empty-icon">🎉</div>
+                  <h4>All clear!</h4>
+                  <p>No pending orders right now.</p>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3>Quick Summary</h3>
+                <div class="card-subtitle">Your cafe at a glance</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;flex-direction:column;gap:0.875rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
+                  <span style="font-size:0.875rem;font-weight:600;">Tables with QR codes</span>
+                  <strong>{{ tables | length }}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
+                  <span style="font-size:0.875rem;font-weight:600;">Menu categories</span>
+                  <strong>{{ menu.categories | length }}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
+                  <span style="font-size:0.875rem;font-weight:600;">Total menu items</span>
+                  <strong>{{ total_items }}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--surface-alt);border-radius:var(--radius);">
+                  <span style="font-size:0.875rem;font-weight:600;">Orders completed</span>
+                  <strong>{{ completed_orders | length }}</strong>
+                </div>
+                {% set total_revenue = completed_orders | sum(attribute='total') %}
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.875rem;background:var(--primary-light);border-radius:var(--radius);">
+                  <span style="font-size:0.875rem;font-weight:700;color:var(--primary);">Total Revenue</span>
+                  <strong style="color:var(--primary);">${{ '%.2f' | format(total_revenue) }}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLES TAB -->
+      <div id="tab-tables" class="tab-panel">
+        <div class="tables-layout">
+          <div class="table-form-card">
+            <h3>Add New Table</h3>
+            <form action="{{ url_for('create_table') }}" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <div class="field">
+                <label for="tableName">Table Name</label>
+                <input id="tableName" name="tableName" placeholder="e.g. Table 3, Window Seat" required />
+              </div>
+              <button class="btn btn-primary btn-full" type="submit">+ Create Table</button>
+            </form>
+          </div>
+
+          <div>
+            {% if tables %}
+            <div class="tables-grid">
+              {% for table in tables %}
+              <div class="table-item">
+                <div class="table-qr-wrap">
+                  <img src="{{ url_for('table_qr', table_id=table.id) }}" alt="QR for {{ table.name }}" />
+                </div>
+                <div class="table-info">
+                  <h4>{{ table.name }}</h4>
+                  <div class="table-id">{{ table.id }}</div>
+                  <a href="{{ url_for('table_order', table_id=table.id, _external=True) }}" target="_blank" rel="noopener noreferrer">🔗 Open ordering page</a>
+                </div>
+                <div class="table-actions-wrap">
+                  <a href="{{ url_for('table_qr', table_id=table.id) }}" download="qr-{{ table.id }}.png" class="btn btn-secondary btn-sm">⬇ Download QR</a>
+                  <form action="{{ url_for('delete_table', table_id=table.id) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button class="btn btn-danger btn-sm" type="submit" data-confirm="Remove this table?">Remove</button>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="card">
+              <div class="empty-state">
+                <div class="empty-icon">🪑</div>
+                <h4>No tables yet</h4>
+                <p>Create a table to generate a QR code for customer ordering.</p>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- MENU TAB -->
+      <div id="tab-menu" class="tab-panel">
+        <div class="menu-layout">
+
+          <div>
+            <div class="card" style="margin-bottom:1.25rem;">
+              <div class="card-header"><h3>Add Category</h3></div>
+              <div class="card-body">
+                <form action="{{ url_for('create_menu_category') }}" method="post" style="display:flex;gap:0.75rem;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input name="categoryName" placeholder="Category name (e.g. Coffee)" required
+                    style="flex:1;padding:0.75rem 1rem;border:1.5px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:0.9375rem;outline:none;" />
+                  <button class="btn btn-primary" type="submit">Add</button>
+                </form>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>Categories &amp; Items</h3></div>
+              <div class="card-body">
+                {% if menu.categories %}
+                  {% for category in menu.categories %}
+                  <div class="category-item">
+                    <div class="category-header">
+                      <span class="category-name">{{ category.name }}</span>
+                      <span class="category-count">{{ category['items'] | length }} items</span>
+                      <form action="{{ url_for('delete_menu_category', category_id=category.id) }}" method="post" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <button class="btn btn-danger btn-sm" type="submit" data-confirm="Delete this category and all its items?">Delete</button>
+                      </form>
+                    </div>
+                    <div class="category-rename-form">
+                      <form action="{{ url_for('rename_menu_category', category_id=category.id) }}" method="post" style="display:flex;gap:0.5rem;flex:1;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                        <input name="categoryName" value="{{ category.name }}" placeholder="Rename"
+                          style="flex:1;padding:0.5rem 0.75rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:0.875rem;outline:none;" />
+                        <button class="btn btn-secondary btn-sm" type="submit">Rename</button>
+                      </form>
+                    </div>
+
+                    {% if category['items'] %}
+                    <div class="menu-items-list">
+                      {% for item in category['items'] %}
+                      <div class="menu-item-row">
+                        <div class="item-row-grid">
+                          <div>
+                            <div class="item-name">{{ item.name }}</div>
+                            {% if item.description %}<div style="font-size:0.8rem;color:var(--text-muted);">{{ item.description }}</div>{% endif %}
+                          </div>
+                          <div class="item-price">${{ '%.2f' | format(item.price) }}</div>
+                        </div>
+                        <div class="item-row-actions">
+                          <button class="btn btn-secondary btn-sm" type="button" data-edit-target="edit-{{ item.id }}">Edit</button>
+                          <form action="{{ url_for('delete_menu_item', item_id=item.id) }}" method="post" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                            <button class="btn btn-danger btn-sm" type="submit" data-confirm="Delete this item?">Delete</button>
+                          </form>
+                        </div>
+                        <form id="edit-{{ item.id }}" class="item-edit-form" action="{{ url_for('save_menu_item') }}" method="post">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                          <input type="hidden" name="categoryId" value="{{ category.id }}" />
+                          <input type="hidden" name="itemId" value="{{ item.id }}" />
+                          <div><input name="itemName" value="{{ item.name }}" placeholder="Name" required /></div>
+                          <div><input name="itemPrice" type="number" step="0.01" value="{{ item.price }}" placeholder="Price" required /></div>
+                          <div class="full-col"><input name="itemDescription" value="{{ item.description }}" placeholder="Description" /></div>
+                          <div class="full-col"><input name="itemTags" value="{{ item.tags | join(', ') }}" placeholder="Tags (comma separated)" /></div>
+                          <div class="full-col" style="display:flex;gap:0.5rem;">
+                            <button class="btn btn-primary btn-sm" type="submit">Save Changes</button>
+                            <button class="btn btn-ghost btn-sm" type="button" data-edit-target="edit-{{ item.id }}">Cancel</button>
+                          </div>
+                        </form>
+                      </div>
+                      {% endfor %}
+                    </div>
+                    {% endif %}
+                  </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="empty-state">
+                    <div class="empty-icon">📋</div>
+                    <h4>No categories yet</h4>
+                    <p>Add a category above to start building your menu.</p>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="card" style="margin-bottom:1.25rem;">
+              <div class="card-header"><h3>Add New Item</h3></div>
+              <div class="card-body">
+                {% if menu.categories %}
+                <form action="{{ url_for('save_menu_item') }}" method="post">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <div class="field">
+                    <label>Category</label>
+                    <select name="categoryId" required>
+                      {% for category in menu.categories %}
+                      <option value="{{ category.id }}">{{ category.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Item Name</label>
+                    <input name="itemName" placeholder="e.g. Latte" required />
+                  </div>
+                  <div class="field">
+                    <label>Price ($)</label>
+                    <input name="itemPrice" type="number" step="0.01" placeholder="0.00" min="0" max="9999.99" required />
+                  </div>
+                  <div class="field">
+                    <label>Description</label>
+                    <input name="itemDescription" placeholder="Short description" />
+                  </div>
+                  <div class="field">
+                    <label>Tags <span class="text-muted">(comma separated)</span></label>
+                    <input name="itemTags" placeholder="hot, vegan, popular" />
+                  </div>
+                  <button class="btn btn-primary btn-full" type="submit">Add Item to Menu</button>
+                </form>
+                {% else %}
+                <div class="empty-state" style="padding:1.5rem;">
+                  <div class="empty-icon">👆</div>
+                  <p>Create a category first before adding items.</p>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>Import / Export</h3></div>
+              <div class="card-body">
+                <p class="text-muted" style="margin:0 0 1rem;">Paste or upload a menu.json file to replace the current menu.</p>
+                <form action="{{ url_for('update_menu') }}" method="post">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <div class="field">
+                    <label>Menu JSON</label>
+                    <textarea name="menuJson" rows="8" style="min-height:120px;">{{ menu_json }}</textarea>
+                  </div>
+                  <button class="btn btn-secondary btn-full" type="submit" style="margin-bottom:0.75rem;">Save JSON</button>
+                </form>
+                <form action="{{ url_for('update_menu') }}" method="post" enctype="multipart/form-data">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <div class="field">
+                    <label>Upload menu.json</label>
+                    <input type="file" name="menuFile" accept="application/json" style="font-size:0.875rem;" />
+                  </div>
+                  <button class="btn btn-secondary btn-full" type="submit" style="margin-bottom:0.75rem;">Upload File</button>
+                </form>
+                <a href="{{ url_for('download_menu') }}" class="btn btn-ghost btn-full" style="border:1.5px solid var(--border);">⬇ Download Current Menu</a>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ORDERS TAB -->
+      <div id="tab-orders" class="tab-panel">
+        <div class="orders-layout">
+          <div>
+            <div class="card-header" style="padding:0 0 1rem;">
+              <h3 class="section-title" style="margin:0;">Pending <span style="color:var(--danger);font-size:0.875rem;">({{ pending_orders | length }})</span></h3>
+            </div>
+            {% if pending_orders %}
+              {% for order in pending_orders %}
+              <div class="order-card">
+                <div class="order-card-head">
+                  <div>
+                    <div class="order-id">Order #{{ order.id }}</div>
+                    <div class="order-customer">{{ order.customerName }}</div>
+                    <div class="order-time">{{ order.createdAt[:16].replace('T',' ') }} UTC</div>
+                  </div>
+                  <div style="text-align:right;">
+                    <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
+                    <div style="margin-top:0.375rem;"><span class="order-status-badge status-pending">⏳ Pending</span></div>
+                  </div>
+                </div>
+                <div class="order-items-list">
+                  {% for item in order.items %}
+                  <div class="order-line">
+                    <span>{{ item.name }} × {{ item.quantity }}</span>
+                    <span>${{ '%.2f' | format(item.lineTotal) }}</span>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="order-total-row">
+                  <span class="order-total-label">Total</span>
+                  <span class="order-total-value">${{ '%.2f' | format(order.total) }}</span>
+                </div>
+                <div style="margin-top:0.875rem;">
+                  <form action="{{ url_for('complete_order', order_id=order.id) }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <button class="btn btn-primary btn-full" type="submit">✓ Mark as Completed</button>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="card"><div class="empty-state">
+                <div class="empty-icon">🎉</div>
+                <h4>No pending orders</h4>
+                <p>All done!</p>
+              </div></div>
+            {% endif %}
+          </div>
+
+          <div>
+            <div class="card-header" style="padding:0 0 1rem;">
+              <h3 class="section-title" style="margin:0;">Completed <span style="color:var(--success);font-size:0.875rem;">({{ completed_orders | length }})</span></h3>
+            </div>
+            {% if completed_orders %}
+              {% for order in completed_orders %}
+              <div class="order-card completed-order">
+                <div class="order-card-head">
+                  <div>
+                    <div class="order-id">Order #{{ order.id }}</div>
+                    <div class="order-customer">{{ order.customerName }}</div>
+                    <div class="order-time">{{ order.createdAt[:16].replace('T',' ') }} UTC</div>
+                  </div>
+                  <div style="text-align:right;">
+                    <span class="order-table-badge">{{ order.tableName or 'Online' }}</span>
+                    <div style="margin-top:0.375rem;"><span class="order-status-badge status-completed">✓ Done</span></div>
+                  </div>
+                </div>
+                <div class="order-total-row">
+                  <span class="order-total-label">Total</span>
+                  <span class="order-total-value">${{ '%.2f' | format(order.total) }}</span>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="card"><div class="empty-state">
+                <div class="empty-icon">📭</div>
+                <h4>No completed orders yet</h4>
+              </div></div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/dashboard.js"></script>
+</body>
+</html>
