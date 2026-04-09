@@ -8,6 +8,9 @@ import re
 import secrets
 import tempfile
 import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -384,18 +387,47 @@ def _otp_is_expired(created_at_key: str = "signup_otp_created_at") -> bool:
 
 
 def _send_otp(mobile: str, otp: str) -> None:
-    """Send OTP via SMS.
-    
-    In production: integrate an SMS provider (e.g. MSG91, Twilio, Fast2SMS).
-    Set the provider credentials as environment variables and implement the
-    HTTP call here. In demo/development mode the OTP is shown on-screen.
+    """Send OTP via Fast2SMS.
+
+    Uses the Fast2SMS OTP route (pre-approved DLT template).
+    Mobile must be a 10-digit Indian number (no country code).
+    Falls back to demo-mode logging when FAST2SMS_API_KEY is not set.
     """
-    # Production SMS sending would go here:
-    # provider_api_key = os.environ.get("SMS_API_KEY")
-    # if provider_api_key:
-    #     send_via_provider(mobile, otp, provider_api_key)
-    #     return
-    app.logger.info("OTP for %s: %s (demo mode — no SMS sent)", mobile, otp)
+    api_key = os.environ.get("FAST2SMS_API_KEY")
+    if not api_key:
+        app.logger.warning("FAST2SMS_API_KEY not set — OTP %s for %s (demo mode)", otp, mobile)
+        return
+
+    # Fast2SMS expects 10-digit number without country code
+    digits = re.sub(r"[^\d]", "", mobile)
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+
+    params = urllib.parse.urlencode({
+        "authorization": api_key,
+        "route": "otp",
+        "variables_values": otp,
+        "flash": "0",
+        "numbers": digits,
+    })
+    url = f"https://www.fast2sms.com/dev/bulkV2?{params}"
+
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"cache-control": "no-cache"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            app.logger.info("Fast2SMS response for %s: %s", digits, body)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        app.logger.error("Fast2SMS HTTP error %s for %s: %s", exc.code, digits, body)
+    except Exception as exc:
+        app.logger.error("Fast2SMS request failed for %s: %s", digits, exc)
 
 # ---------------------------------------------------------------------------
 # Order computation
@@ -602,7 +634,7 @@ def owner_login_otp() -> str | Response:
         _send_otp(mobile_normalised, otp)
         log_security("LOGIN_OTP_ISSUED", f"mobile={mobile_normalised!r}")
 
-        return redirect(url_for("owner_login_otp_verify", otp_hint=otp))
+        return redirect(url_for("owner_login_otp_verify"))
 
     return render_template("owner_login_otp.html")
 
@@ -701,7 +733,7 @@ def owner_signup() -> str | Response:
 
         _send_otp(_normalise_mobile(mobile), otp)
         log_security("SIGNUP_OTP_ISSUED", f"user={username!r}")
-        return redirect(url_for("owner_signup_verify", otp_hint=otp))
+        return redirect(url_for("owner_signup_verify"))
 
     return render_template("owner_signup.html")
 
