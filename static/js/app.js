@@ -52,7 +52,7 @@ function renderMenu() {
                 ${item.description ? `<p class="item-desc">${item.description}</p>` : ""}
               </div>
               <div class="menu-item-right">
-                <span class="item-price">$${fmt(item.price)}</span>
+                <span class="item-price">₹${fmt(item.price)}</span>
                 <button class="add-btn" data-id="${item.id}">+ Add</button>
               </div>
             </div>
@@ -86,7 +86,7 @@ function renderCart() {
       <div class="cart-item">
         <div class="cart-item-info">
           <span>${entry.name}</span>
-          <span>$${fmt(entry.lineTotal)}</span>
+          <span>₹${fmt(entry.lineTotal)}</span>
         </div>
         <div class="cart-item-actions">
           <button class="qty-btn" data-action="decrease" data-id="${entry.id}">−</button>
