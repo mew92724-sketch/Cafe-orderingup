@@ -8,6 +8,7 @@ import re
 import secrets
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -365,6 +366,62 @@ def _is_strong_password(password: str) -> bool:
     )
 
 # ---------------------------------------------------------------------------
+# IP-based login lockout — brute-force protection
+# ---------------------------------------------------------------------------
+
+_failed_logins: dict[str, list[float]] = {}
+_failed_logins_lock = threading.Lock()
+_MAX_FAIL_ATTEMPTS = 5       # max failures before lockout
+_LOCKOUT_WINDOW = 900.0      # rolling 15-minute window (seconds)
+
+
+def _is_ip_locked_out(ip: str) -> bool:
+    """Return True when the IP has too many recent failed login attempts."""
+    now = time.monotonic()
+    with _failed_logins_lock:
+        recent = [t for t in _failed_logins.get(ip, []) if now - t < _LOCKOUT_WINDOW]
+        _failed_logins[ip] = recent
+        return len(recent) >= _MAX_FAIL_ATTEMPTS
+
+
+def _record_failed_login(ip: str) -> None:
+    now = time.monotonic()
+    with _failed_logins_lock:
+        recent = [t for t in _failed_logins.get(ip, []) if now - t < _LOCKOUT_WINDOW]
+        recent.append(now)
+        _failed_logins[ip] = recent
+
+
+def _clear_failed_logins(ip: str) -> None:
+    with _failed_logins_lock:
+        _failed_logins.pop(ip, None)
+
+# ---------------------------------------------------------------------------
+# API auth decorator — returns 401 JSON instead of redirecting
+# ---------------------------------------------------------------------------
+
+def api_login_required(view_func):
+    """Like login_required but returns JSON 401 for unauthenticated API calls."""
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if not logged_in_owner():
+            log_security("API_UNAUTHORISED", f"path={request.path}")
+            return jsonify(description="Authentication required."), 401
+        return view_func(*args, **kwargs)
+    return wrapper
+
+# ---------------------------------------------------------------------------
+# Cache-control helper for auth/dashboard pages
+# ---------------------------------------------------------------------------
+
+def _no_store(response):
+    """Add no-store cache headers to prevent sensitive pages being cached."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+# ---------------------------------------------------------------------------
 # OTP helpers — cryptographically secure
 # ---------------------------------------------------------------------------
 
@@ -569,8 +626,17 @@ def owner_login() -> str | Response:
 
     owners = load_owners()
     allow_signup = len(owners) == 0
+    ip = _client_ip()
 
     if request.method == "POST":
+        # IP lockout check — block after 5 failed attempts in 15 minutes
+        if _is_ip_locked_out(ip):
+            log_security("LOGIN_LOCKOUT_BLOCKED", f"ip={ip!r}")
+            flash("Too many failed attempts. Please try again in 15 minutes.")
+            return _no_store(
+                app.make_response(render_template("owner_login.html", allow_signup=allow_signup))
+            )
+
         identifier = str(request.form.get("identifier", "")).strip()[:128]
         password = str(request.form.get("password", ""))[:256]
 
@@ -584,16 +650,20 @@ def owner_login() -> str | Response:
         )
 
         if owner and check_password_hash(owner["passwordHash"], password):
+            _clear_failed_logins(ip)
             session.clear()
             session["owner_username"] = owner["username"]
             session.permanent = True
             log_security("LOGIN_SUCCESS", f"user={owner['username']!r}")
             return redirect(url_for("owner_dashboard"))
 
-        log_security("LOGIN_FAILURE", f"identifier={identifier!r}")
+        _record_failed_login(ip)
+        log_security("LOGIN_FAILURE", f"identifier={identifier!r} ip={ip!r}")
         flash("Sign in failed. Check your credentials and try again.")
 
-    return render_template("owner_login.html", allow_signup=allow_signup)
+    return _no_store(
+        app.make_response(render_template("owner_login.html", allow_signup=allow_signup))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -650,13 +720,12 @@ def owner_login_otp_verify() -> str | Response:
         flash("Session expired. Please request a new OTP.")
         return redirect(url_for("owner_login_otp"))
 
-    otp_hint = request.args.get("otp_hint", "")
-
     if request.method == "POST":
         if _otp_is_expired("login_otp_created_at"):
             session.pop("login_otp", None)
             session.pop("login_otp_created_at", None)
             session.pop("login_otp_mobile", None)
+            session.pop("login_otp_attempts", None)
             log_security("LOGIN_OTP_EXPIRED", f"mobile={mobile!r}")
             flash("Your OTP has expired. Please request a new one.")
             return redirect(url_for("owner_login_otp"))
@@ -665,9 +734,21 @@ def owner_login_otp_verify() -> str | Response:
         stored = session.get("login_otp", "")
 
         if not secrets.compare_digest(entered, stored):
-            log_security("LOGIN_OTP_FAILURE", f"mobile={mobile!r}")
-            flash("Incorrect OTP. Please try again.")
-            return render_template("owner_login_otp_verify.html", mobile=mobile, otp_hint=otp_hint)
+            attempts = session.get("login_otp_attempts", 0) + 1
+            session["login_otp_attempts"] = attempts
+            log_security("LOGIN_OTP_FAILURE", f"mobile={mobile!r} attempt={attempts}")
+            if attempts >= 3:
+                # Invalidate OTP — attacker must request a fresh one
+                session.pop("login_otp", None)
+                session.pop("login_otp_created_at", None)
+                session.pop("login_otp_mobile", None)
+                session.pop("login_otp_attempts", None)
+                flash("Too many incorrect attempts. Please request a new OTP.")
+                return redirect(url_for("owner_login_otp"))
+            flash(f"Incorrect OTP. {3 - attempts} attempt(s) remaining.")
+            return _no_store(
+                app.make_response(render_template("owner_login_otp_verify.html", mobile=mobile))
+            )
 
         owners = load_owners()
         owner = next(
@@ -679,13 +760,17 @@ def owner_login_otp_verify() -> str | Response:
             flash("Account not found. Please contact support.")
             return redirect(url_for("owner_login"))
 
+        ip = _client_ip()
+        _clear_failed_logins(ip)
         session.clear()
         session["owner_username"] = owner["username"]
         session.permanent = True
         log_security("LOGIN_OTP_SUCCESS", f"user={owner['username']!r}")
         return redirect(url_for("owner_dashboard"))
 
-    return render_template("owner_login_otp_verify.html", mobile=mobile, otp_hint=otp_hint)
+    return _no_store(
+        app.make_response(render_template("owner_login_otp_verify.html", mobile=mobile))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -750,13 +835,12 @@ def owner_signup_verify() -> str | Response:
         flash("Session expired. Please start registration again.")
         return redirect(url_for("owner_signup"))
 
-    otp_hint = request.args.get("otp_hint", "")
-
     if request.method == "POST":
         if _otp_is_expired("signup_otp_created_at"):
             session.pop("pending_signup", None)
             session.pop("signup_otp", None)
             session.pop("signup_otp_created_at", None)
+            session.pop("signup_otp_attempts", None)
             log_security("OTP_EXPIRED", f"user={pending.get('username', '?')!r}")
             flash("Your OTP has expired. Please register again.")
             return redirect(url_for("owner_signup"))
@@ -765,9 +849,18 @@ def owner_signup_verify() -> str | Response:
         stored = session.get("signup_otp", "")
 
         if not secrets.compare_digest(entered, stored):
-            log_security("OTP_FAILURE", f"user={pending.get('username', '?')!r}")
-            flash("Incorrect OTP. Please try again.")
-            return render_template("owner_signup_verify.html", otp_hint=otp_hint)
+            attempts = session.get("signup_otp_attempts", 0) + 1
+            session["signup_otp_attempts"] = attempts
+            log_security("OTP_FAILURE", f"user={pending.get('username', '?')!r} attempt={attempts}")
+            if attempts >= 3:
+                session.pop("pending_signup", None)
+                session.pop("signup_otp", None)
+                session.pop("signup_otp_created_at", None)
+                session.pop("signup_otp_attempts", None)
+                flash("Too many incorrect attempts. Please start registration again.")
+                return redirect(url_for("owner_signup"))
+            flash(f"Incorrect OTP. {3 - attempts} attempt(s) remaining.")
+            return _no_store(app.make_response(render_template("owner_signup_verify.html")))
 
         new_owner = {
             "id": next_id(owners),
@@ -784,7 +877,7 @@ def owner_signup_verify() -> str | Response:
         log_security("SIGNUP_SUCCESS", f"user={pending['username']!r}")
         return redirect(url_for("owner_dashboard"))
 
-    return render_template("owner_signup_verify.html", otp_hint=otp_hint)
+    return _no_store(app.make_response(render_template("owner_signup_verify.html")))
 
 
 @app.route("/owner/logout")
@@ -801,7 +894,7 @@ def owner_logout() -> Response:
 
 @app.route("/owner/dashboard")
 @login_required
-def owner_dashboard() -> str:
+def owner_dashboard() -> Response:
     tables = load_tables()
     orders = sorted(load_orders(), key=lambda o: o.get("createdAt", ""), reverse=True)
     menu = load_menu()
@@ -809,7 +902,7 @@ def owner_dashboard() -> str:
     completed_orders = [o for o in orders if o.get("status") == "completed"]
     total_items = sum(len(cat.get("items", [])) for cat in menu.get("categories", []))
     total_revenue = round(sum(float(o.get("total") or 0) for o in completed_orders), 2)
-    return render_template(
+    resp = app.make_response(render_template(
         "owner_dashboard.html",
         owner_username=logged_in_owner(),
         tables=tables,
@@ -819,7 +912,8 @@ def owner_dashboard() -> str:
         completed_orders=completed_orders,
         total_items=total_items,
         total_revenue=total_revenue,
-    )
+    ))
+    return _no_store(resp)
 
 # ---------------------------------------------------------------------------
 # Menu management (all require login)
@@ -1159,19 +1253,34 @@ def checkout() -> tuple[dict, int]:
 @app.route("/api/orders", methods=["GET"])
 @csrf.exempt
 @limiter.limit("60 per minute")
+@api_login_required
 def orders_api() -> tuple[dict, int]:
+    """Return all orders — owner-only endpoint."""
     return {"orders": load_orders()}, 200
 
 
 @app.route("/api/order/<int:order_id>", methods=["GET"])
 @csrf.exempt
-@limiter.limit("120 per minute")
+@limiter.limit("20 per minute; 60 per hour")
 def get_order(order_id: int) -> tuple[dict, int]:
+    """Public customer tracker — returns only UX-required fields.
+    Internal fields (tableId UUID, raw timestamps) are stripped to limit
+    sequential-ID enumeration impact. Rate limit also slows scraping.
+    """
     orders = load_orders()
     order = next((o for o in orders if o["id"] == order_id), None)
     if not order:
         abort(404, description="Order not found.")
-    return {"order": order}, 200
+    safe_order = {
+        "id": order["id"],
+        "status": order.get("status", "pending"),
+        "tableName": order.get("tableName", ""),
+        "customerName": order.get("customerName", ""),
+        "items": order.get("items", []),
+        "total": order.get("total", 0),
+        "placedAt": order.get("placedAt", ""),
+    }
+    return {"order": safe_order}, 200
 
 # ---------------------------------------------------------------------------
 # Init data files
